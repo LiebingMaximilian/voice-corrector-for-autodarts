@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Voice Corrector for Autodarts settings</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; width: 340px; }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    h2 { font-size: 13px; margin: 20px 0 6px; text-transform: uppercase; letter-spacing: .04em; opacity: .7; }
+    label { display: block; font-weight: 600; margin-top: 12px; }
+    .hint { font-size: 12px; opacity: .7; margin: 2px 0 0; }
+    input[type="text"] { font: inherit; width: 100%; box-sizing: border-box; padding: 6px 8px; margin-top: 4px;
+                         border: 1px solid #888; border-radius: 6px; }
+    .check { display: flex; gap: 8px; align-items: center; font-weight: 600; margin-top: 16px; }
+    .check input { margin: 0; }
+    .buttons { display: flex; gap: 8px; margin-top: 16px; }
+    button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #888; cursor: pointer; }
+    #msg { margin-top: 8px; min-height: 1.5em; font-size: 13px; }
+    .ok { color: #2a2; } .err { color: #d33; }
+    .usage { font-size: 13px; margin: 0; padding: 0; list-style: none; }
+    .usage li { margin: 4px 0; }
+    code { font: 12px ui-monospace, Consolas, monospace; background: rgba(127,127,127,.15); padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>Voice Corrector for Autodarts</h1>
+
+  <form id="form">
+    <label for="wakeWord">Wake word</label>
+    <input id="wakeWord" type="text" autocomplete="off" spellcheck="false">
+    <p class="hint">Pick a word the caller and TV rarely say.</p>
+
+    <label class="check"><input id="autoConfirm" type="checkbox"> Press OK automatically</label>
+    <p class="hint">Confirms a correction in Autodarts right after it's made.</p>
+
+    <div class="buttons">
+      <button type="submit">Save</button>
+      <button type="button" id="openFile">Open settings file</button>
+    </div>
+    <p class="hint">The settings file holds the words speech recognition mishears, e.g. "dot" for "dart".</p>
+    <div id="msg"></div>
+  </form>
+
+  <h2>How to use</h2>
+  <ul class="usage">
+    <li>Start listening with the <b>Start</b> button in the panel on the match page, or <b>Alt+V</b>.</li>
+    <li><code><span class="w">correct</span> triple twenty</code>: last dart becomes T20</li>
+    <li><code><span class="w">correct</span> second double 16</code>: dart 2 becomes D16</li>
+    <li><code><span class="w">correct</span> the first dart to 5</code>: dart 1 becomes S5</li>
+    <li><code><span class="w">correct</span> bullseye</code> / <code>outer bull</code> / <code>miss</code></li>
+    <li><code><span class="w">correct</span> undo</code>: reverts the last voice correction</li>
+    <li>Short forms work too: <code>T20</code>, <code>D16</code>, <code>treble 19</code>.</li>
+    <li>If something isn't understood, the panel shows what was heard. Add misheard words to the settings file.</li>
+  </ul>
+
+  <script src="src/segments.js"></script>
+  <script src="src/parser.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

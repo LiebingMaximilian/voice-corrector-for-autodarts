@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Voice Corrector for Autodarts settings file</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 14px/1.5 system-ui, sans-serif; margin: 0 auto; padding: 24px 16px; max-width: 760px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .hint { font-size: 13px; opacity: .75; margin: 0 0 12px; }
+    textarea { width: 100%; box-sizing: border-box; min-height: 420px; padding: 10px;
+               font: 13px/1.5 ui-monospace, Consolas, monospace; border: 1px solid #888; border-radius: 8px;
+               tab-size: 2; resize: vertical; }
+    .buttons { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+    button { font: inherit; padding: 6px 14px; border-radius: 6px; border: 1px solid #888; cursor: pointer; }
+    #msg { margin-top: 10px; font-size: 13px; white-space: pre-line; }
+    .ok { color: #2a2; } .err { color: #d33; }
+  </style>
+</head>
+<body>
+  <h1>Settings file</h1>
+  <p class="hint">Words speech recognition tends to mishear. Edit the JSON and save; open Autodarts tabs use it
+    immediately. The <code>_usage</code> lines are just help text.</p>
+
+  <textarea id="file" spellcheck="false" aria-label="Settings file (JSON)"></textarea>
+
+  <div class="buttons">
+    <button type="button" id="save">Save</button>
+    <button type="button" id="reset">Reset to defaults</button>
+  </div>
+  <div id="msg"></div>
+
+  <script src="src/segments.js"></script>
+  <script src="src/parser.js"></script>
+  <script src="settings-file.js"></script>
+</body>
+</html>
