@@ -1,6 +1,6 @@
 {
   "name": "voice-corrector-for-autodarts",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "private": true,
   "description": "Correct misdetected darts on Autodarts with voice commands.",
   "scripts": {

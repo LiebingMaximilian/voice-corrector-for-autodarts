@@ -23,10 +23,11 @@
     // Words for "dart". They are simply skipped, so "the second dot to T20" works.
     dartWords: ['dart', 'darts', 'dot', 'dots', 'dirt', 'arrow'],
     // Extra words for single / double / triple, on top of those three words themselves.
+    // Entries may be phrases of several words, e.g. "of top of" (heard instead of "triple").
     multiplierWords: {
       single: ['singles'],
       double: ['doubles'],
-      triple: ['triples', 'treble', 'trebles'],
+      triple: ['triples', 'treble', 'trebles', 'tripple', 'tribble', 'tribal', 'of top of'],
     },
     // What is heard instead of a number. Only used where a number is expected.
     numberSoundalikes: { won: 1, to: 2, too: 2, tree: 3, free: 3, for: 4, fore: 4, ate: 8 },
@@ -35,9 +36,10 @@
   const VOCAB_USAGE = [
     'Settings file for Voice Corrector for Autodarts: words speech recognition tends to mishear.',
     "dartWords: words that mean 'dart' (they are ignored), e.g. add 'dark' if you get that a lot.",
-    "multiplierWords: extra words for single / double / triple, e.g. 'trouble' for triple.",
+    "multiplierWords: extra words for single / double / triple, e.g. 'of top of' for triple.",
     "numberSoundalikes: word -> number (1-20) for words heard instead of a number, e.g. 'sicks': 6.",
-    'Words must be lowercase letters. A word may only appear once in the whole file.',
+    "Every entry can be one word or a phrase of several words, e.g. 'of top of'.",
+    'Words must be lowercase letters. An entry may only appear once in the whole file.',
     'Check the panel on the Autodarts page: it shows what was heard, so you can see which words to add.',
   ];
 
@@ -60,6 +62,13 @@
   };
 
   const UNDO = new Set(['undo', 'revert', 'back']);
+  const NEXT = new Set(['next']); // presses the Next / Weiter button
+  // "board calibrate" / "board reset" (either order); "board" is often heard as "bored" or "bord".
+  const BOARD_WORDS = new Set(['board', 'bored', 'bord', 'boards']);
+  const BOARD_ACTIONS = {
+    calibrate: 'calibrate', calibration: 'calibrate', calibrated: 'calibrate', calibrates: 'calibrate',
+    reset: 'reset', resets: 'reset', restart: 'reset',
+  };
 
   // Dropped everywhere (together with the dart words).
   const FILLERS = ['the', 'a', 'an', 'please', 'it', 'that', 'number', 'make'];
@@ -71,17 +80,22 @@
 
   // ---- Vocabulary handling ----------------------------------------------------
 
+  const isCommandWord = (w) => w in NUMBER_WORDS || w in BASE_MULTIPLIERS || w in POSITIONS
+    || UNDO.has(w) || NEXT.has(w) || BULL_WORDS.includes(w) || BOARD_WORDS.has(w) || w in BOARD_ACTIONS;
+
   // Checks a user vocabulary. Returns { vocab, errors }; vocab is null if invalid.
   function validateVocab(input, { wakeWord = 'correct' } = {}) {
     const errors = [];
-    const isWord = (w) => typeof w === 'string' && /^[a-z']+$/.test(w);
-    const seen = new Map(); // word -> where it was used
+    // One lowercase word, or a phrase of several separated by single spaces.
+    const isEntry = (w) => typeof w === 'string' && /^[a-z']+( [a-z']+)*$/.test(w);
+    const seen = new Map(); // entry -> where it was used
     const use = (word, where) => {
-      if (!isWord(word)) return errors.push(`${where}: "${word}" is not a lowercase word`);
+      if (!isEntry(word)) return errors.push(`${where}: "${word}" must be lowercase words separated by single spaces`);
       if (seen.has(word)) return errors.push(`"${word}" appears twice (${seen.get(word)} and ${where})`);
       if (word === wakeWord) return errors.push(`${where}: "${word}" is your wake word`);
-      if (word in NUMBER_WORDS || word in BASE_MULTIPLIERS || word in POSITIONS || UNDO.has(word)
-        || BULL_WORDS.includes(word)) {
+      if (word.includes(' ')) {
+        if (word.split(' ').includes(wakeWord)) return errors.push(`${where}: "${word}" contains your wake word`);
+      } else if (isCommandWord(word)) {
         return errors.push(`${where}: "${word}" is already a command word`);
       }
       seen.set(word, where);
@@ -130,19 +144,48 @@
 
   // Lookup tables built from a vocabulary, cached per vocabulary object.
   const compiled = new WeakMap();
+  // Single words go into lookup tables; phrases ("of top of") are rewritten to
+  // one token before parsing (null = drop the phrase, like a dart word).
   function compile(vocab) {
     if (compiled.has(vocab)) return compiled.get(vocab);
     const multipliers = { ...BASE_MULTIPLIERS };
-    for (const [kind, words] of Object.entries(vocab.multiplierWords || {})) {
-      for (const w of words) multipliers[w] = MULTIPLIER_VALUE[kind];
+    const soundalikes = {};
+    const fillers = new Set(FILLERS);
+    const phrases = [];
+    const phrase = (p, replacement) => phrases.push({ words: p.split(' '), replacement });
+
+    for (const w of vocab.dartWords || []) {
+      if (w.includes(' ')) phrase(w, null); else fillers.add(w);
     }
-    const t = {
-      fillers: new Set([...FILLERS, ...(vocab.dartWords || [])]),
-      multipliers,
-      soundalikes: vocab.numberSoundalikes || {},
-    };
+    for (const [kind, words] of Object.entries(vocab.multiplierWords || {})) {
+      for (const w of words) {
+        if (w.includes(' ')) phrase(w, kind); else multipliers[w] = MULTIPLIER_VALUE[kind];
+      }
+    }
+    for (const [w, n] of Object.entries(vocab.numberSoundalikes || {})) {
+      if (w.includes(' ')) phrase(w, String(n)); else soundalikes[w] = n;
+    }
+    phrases.sort((a, b) => b.words.length - a.words.length); // longest match first
+
+    const t = { fillers, multipliers, soundalikes, phrases };
     compiled.set(vocab, t);
     return t;
+  }
+
+  function replacePhrases(tokens, phrases) {
+    if (!phrases.length) return tokens;
+    const out = [];
+    for (let i = 0; i < tokens.length;) {
+      const hit = phrases.find((p) => p.words.every((w, k) => tokens[i + k] === w));
+      if (hit) {
+        if (hit.replacement !== null) out.push(hit.replacement);
+        i += hit.words.length;
+      } else {
+        out.push(tokens[i]);
+        i += 1;
+      }
+    }
+    return out;
   }
 
   // ---- Parsing ----------------------------------------------------------------
@@ -216,11 +259,17 @@
     tokens.forEach((tok, i) => { if (isWake(tok, wakeWord)) wake = i; });
     if (wake === -1) return null;
 
-    let rest = tokens.slice(wake + 1).filter((tok) => !t.fillers.has(tok));
+    let rest = replacePhrases(tokens.slice(wake + 1), t.phrases).filter((tok) => !t.fillers.has(tok));
     const error = (reason) => ({ type: 'error', reason, text: transcript });
 
     if (rest.length === 0) return error('nothing after the wake word');
     if (UNDO.has(rest[0]) && rest.length <= 2) return { type: 'undo' };
+    if (NEXT.has(rest[0]) && rest.length <= 2) return { type: 'next' }; // "next", "next player"
+    if (rest.some((w) => BOARD_WORDS.has(w))) {
+      const others = rest.filter((w) => !BOARD_WORDS.has(w));
+      if (others.length === 1 && others[0] in BOARD_ACTIONS) return { type: 'board', action: BOARD_ACTIONS[others[0]] };
+      return error('board command: say "board calibrate" or "board reset"');
+    }
 
     let dart = 'last';
     if (rest[0] in POSITIONS) {
@@ -244,8 +293,8 @@
     const w = String(word).trim().toLowerCase();
     const t = compile(vocab);
     if (!/^[a-z]{3,}$/.test(w)) return 'Use a single word, letters only, at least 3 letters.';
-    if (w in NUMBER_WORDS || w in t.soundalikes || w in t.multipliers || w in POSITIONS
-      || UNDO.has(w) || t.fillers.has(w) || CONNECTORS.has(w) || BULL_WORDS.includes(w)) {
+    if (isCommandWord(w) || w in t.soundalikes || w in t.multipliers || t.fillers.has(w) || CONNECTORS.has(w)
+      || t.phrases.some((p) => p.words.includes(w))) {
       return `"${w}" is part of the commands themselves.`;
     }
     return null;

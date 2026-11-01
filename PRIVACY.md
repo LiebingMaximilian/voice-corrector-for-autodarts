@@ -1,6 +1,6 @@
 # Privacy Policy: Voice Corrector for Autodarts
 
-_Last updated: 20 October 2026_
+_Last updated: 21 October 2026_
 
 Voice Corrector for Autodarts ("the extension") is a free, independent hobby project for Google Chrome.
 It lets you correct misdetected darts in an Autodarts match by voice.
@@ -26,9 +26,14 @@ Autodarts pages.
 ### Your Autodarts login
 To make a correction, the extension sends the same request the Autodarts website sends when you
 correct a dart by hand. For that it uses the login token that the Autodarts page itself already
-uses for its own requests.
+uses for its own requests. It picks the token up from the page's requests, from the page's
+login renewals, or from where the Autodarts page keeps it in the browser.
 
-- The token is only kept in memory while the page is open. It is never saved.
+- The token is only kept in memory while the page is open. The extension never saves it.
+- If the login has expired, the extension can reload the Autodarts page so that it logs in again
+  (setting "Reload the page if the login expired", on by default). Your last command is kept in the
+  tab's session storage for up to one minute so it can be repeated after the reload; it contains
+  only the dart and segment, never the token.
 - It is only sent to the Autodarts API (`api.autodarts.com`), the same place the Autodarts page sends it.
 - It is never sent to the developer or any third party.
 

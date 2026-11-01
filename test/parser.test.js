@@ -63,6 +63,49 @@ test('uses the last wake word', () => {
   assert.equal(seg('correction double 3'), 'last:D3');
 });
 
+test('next', () => {
+  assert.deepEqual(parseCommand('correct next'), { type: 'next' });
+  assert.deepEqual(parseCommand('correct next player'), { type: 'next' });
+  assert.equal(parseCommand('correct next triple twenty please now').type, 'error');
+});
+
+test('board control', () => {
+  assert.deepEqual(parseCommand('correct board calibrate'), { type: 'board', action: 'calibrate' });
+  assert.deepEqual(parseCommand('correct board reset'), { type: 'board', action: 'reset' });
+  assert.deepEqual(parseCommand('correct calibrate board'), { type: 'board', action: 'calibrate' });
+  assert.deepEqual(parseCommand('correct bored calibration'), { type: 'board', action: 'calibrate' });
+  assert.deepEqual(parseCommand('correct the board reset please'), { type: 'board', action: 'reset' });
+  assert.equal(parseCommand('correct board').type, 'error');
+  assert.equal(parseCommand('correct board triple twenty').type, 'error');
+  // without the word "board" nothing happens to the board
+  assert.equal(parseCommand('correct reset').type, 'error');
+});
+
+test('triple aliases, including phrases', () => {
+  assert.equal(seg('correct of top of 20'), 'last:T20');
+  assert.equal(seg('correct second dart of top of twenty'), '1:T20');
+  assert.equal(seg('correct tripple 19'), 'last:T19');
+  assert.equal(seg('correct tribble 18'), 'last:T18');
+  assert.equal(seg('correct tribal 17'), 'last:T17');
+});
+
+test('settings file: phrases in every section', () => {
+  const { validateVocab } = require('../src/parser.js');
+  const { vocab, errors } = validateVocab({
+    dartWords: ['dart', 'the dot'],
+    multiplierWords: { double: ['the bull of'], triple: ['of top of'] },
+    numberSoundalikes: { 'sick seen': 16 },
+  });
+  assert.deepEqual(errors, []);
+  const cmd = (text) => parseCommand(text, { vocab });
+  assert.equal(cmd('correct second the dot the bull of sick seen').segment.name, 'D16');
+  assert.equal(cmd('correct second the dot the bull of sick seen').dart, 1);
+  for (const bad of [{ dartWords: ['two  spaces'] }, { dartWords: ['Top Of'] }, { dartWords: ['say correct now'] },
+    { dartWords: ['of top of'], multiplierWords: { triple: ['of top of'] } }, { dartWords: ['next'] }]) {
+    assert.equal(validateVocab(bad).vocab, null, JSON.stringify(bad));
+  }
+});
+
 test('undo', () => {
   assert.deepEqual(parseCommand('correct undo'), { type: 'undo' });
   assert.deepEqual(parseCommand('correct undo that'), { type: 'undo' });
@@ -78,12 +121,15 @@ test('rejects nonsense instead of guessing', () => {
 
 test('wake word validation', () => {
   const { checkWakeWord } = require('../src/parser.js');
-  assert.equal(checkWakeWord('board'), null);
+  assert.equal(checkWakeWord('oche'), null);
+  assert.notEqual(checkWakeWord('board'), null); // used by "board calibrate"
   assert.equal(checkWakeWord('Correct'), null);
   assert.notEqual(checkWakeWord('triple'), null);
   assert.notEqual(checkWakeWord('twenty'), null);
   assert.notEqual(checkWakeWord('two words'), null);
   assert.notEqual(checkWakeWord('ok'), null);
+  assert.notEqual(checkWakeWord('next'), null);
+  assert.notEqual(checkWakeWord('top'), null); // part of the "of top of" phrase
 });
 
 test('settings file: defaults are valid', () => {
@@ -129,6 +175,6 @@ test('settings file: rejects broken input', () => {
 });
 
 test('custom wake word', () => {
-  const cmd = parseCommand('board triple twenty', { wakeWord: 'board' });
+  const cmd = parseCommand('oche triple twenty', { wakeWord: 'oche' });
   assert.equal(cmd.segment.name, 'T20');
 });

@@ -4,7 +4,7 @@
   'use strict';
 
   const Parser = window.AdvParser;
-  const DEFAULTS = { wakeWord: 'correct', autoConfirm: true, vocab: null };
+  const DEFAULTS = { wakeWord: 'correct', autoConfirm: true, autoReload: true, nextLabels: ['Next', 'Weiter'], vocab: null };
   const $ = (id) => document.getElementById(id);
   let vocab = Parser.DEFAULT_VOCAB;
 
@@ -20,6 +20,8 @@
   chrome.storage.sync.get(DEFAULTS, (s) => {
     $('wakeWord').value = s.wakeWord;
     $('autoConfirm').checked = s.autoConfirm;
+    $('autoReload').checked = s.autoReload;
+    $('nextLabels').value = s.nextLabels.join(', ');
     if (s.vocab) vocab = Parser.validateVocab(s.vocab).vocab || vocab;
     showWakeWord(s.wakeWord);
   });
@@ -32,7 +34,15 @@
     const problem = Parser.checkWakeWord(wakeWord, vocab);
     if (problem) return show(false, problem);
 
-    chrome.storage.sync.set({ wakeWord, autoConfirm: $('autoConfirm').checked }, () => {
+    const nextLabels = $('nextLabels').value.split(',').map((l) => l.trim()).filter(Boolean);
+    if (!nextLabels.length) return show(false, 'Enter at least one label for the Next button, e.g. "Weiter".');
+    if (nextLabels.some((l) => l.length > 40)) return show(false, 'Button labels are short, e.g. "Next" or "Weiter".');
+
+    chrome.storage.sync.set({
+      wakeWord, nextLabels,
+      autoConfirm: $('autoConfirm').checked,
+      autoReload: $('autoReload').checked,
+    }, () => {
       show(true, 'Saved. Active immediately on open Autodarts tabs.');
     });
   });

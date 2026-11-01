@@ -17,8 +17,9 @@
   const TAG_OUT = 'adv-hook';
 
   const s = {
-    token: null,
-    tokenExp: 0,
+    token: null,      // "Bearer eyJ…"
+    tokenExp: 0,      // unix seconds
+    tokenSource: null,
     apiOrigin: 'https://api.autodarts.com',
     state: null,
     turn: null,
@@ -36,8 +37,9 @@
 
   const summary = () => ({
     matchId: matchId(),
-    hasToken: !!s.token,
-    tokenExpiresIn: s.token ? Math.round(s.tokenExp - Date.now() / 1000) + 's' : null,
+    hasToken: tokenValid(),
+    tokenExpiresIn: s.token ? Math.round(s.tokenExp - nowSec()) + 's' : null,
+    tokenSource: s.tokenSource,
     apiOrigin: s.apiOrigin,
     turn: s.turn,
     turnKey: s.turnKey,
@@ -69,14 +71,76 @@
     return m ? m[1] : (s.state && s.state.id) || null;
   }
 
+  // ---- Login token ---------------------------------------------------------
+  //
+  // The access token lives ~15 minutes. During a match the page talks mostly
+  // over its WebSocket, so it may renew its token without sending a request we
+  // can see. We therefore pick up a token from three places:
+  //  1. the Authorization header of the page's API requests,
+  //  2. token responses (JSON with "access_token") when the page renews it,
+  //  3. the page's own web storage, searched when our copy has expired.
+  // The newest one (latest expiry) wins.
+
+  const nowSec = () => Date.now() / 1000;
+  const MARGIN = 30; // treat a token as expired 30 s early
+
+  const isAutodartsHost = (url) => {
+    try { return /(^|\.)autodarts\.(com|io)$/.test(new URL(url, location.href).hostname); }
+    catch { return false; }
+  };
+
+  function jwtPayload(jwt) {
+    try { return JSON.parse(atob(jwt.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); }
+    catch { return null; }
+  }
+
+  function offerToken(jwt, source) {
+    const p = jwtPayload(jwt);
+    if (!p || typeof p.exp !== 'number' || !/autodarts/i.test(String(p.iss || ''))) return;
+    if (s.token && p.exp < s.tokenExp) return; // keep the newer one
+    s.token = `Bearer ${jwt}`;
+    s.tokenExp = p.exp;
+    s.tokenSource = source;
+  }
+
+  const tokenValid = () => !!s.token && s.tokenExp - MARGIN > nowSec();
+
+  // Access tokens only: refresh / ID tokens are rejected by the API.
+  function tokenFromStorage() {
+    let best = null;
+    for (const store of [sessionStorage, localStorage]) {
+      try {
+        for (let i = 0; i < store.length; i++) {
+          const value = store.getItem(store.key(i)) || '';
+          for (const m of value.matchAll(/eyJ[\w-]+\.eyJ[\w-]+\.[\w-]+/g)) {
+            const p = jwtPayload(m[0]);
+            if (!p || typeof p.exp !== 'number' || !/autodarts/i.test(String(p.iss || ''))) continue;
+            if (/^(refresh|offline|id)$/i.test(String(p.typ || '')) || typeof p.scope !== 'string') continue;
+            if (!best || p.exp > best.exp) best = { jwt: m[0], exp: p.exp };
+          }
+        }
+      } catch { /* storage blocked */ }
+    }
+    return best;
+  }
+
+  // The freshest valid token, or null.
+  function freshToken() {
+    if (tokenValid()) return s.token;
+    const stored = tokenFromStorage();
+    if (stored) offerToken(stored.jwt, 'storage');
+    return tokenValid() ? s.token : null;
+  }
+
   function rememberToken(value, url) {
     if (!value || !/^Bearer\s/i.test(value)) return;
-    s.token = value;
-    s.apiOrigin = new URL(url, location.href).origin;
-    try {
-      const payload = JSON.parse(atob(value.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-      s.tokenExp = payload.exp || 0;
-    } catch { s.tokenExp = 0; }
+    offerToken(value.replace(/^Bearer\s+/i, ''), 'request');
+    if (isApi(url)) s.apiOrigin = new URL(url, location.href).origin;
+  }
+
+  // Token responses from the page's own login renewals.
+  function inspectAuthResponse(j) {
+    if (j && typeof j.access_token === 'string') offerToken(j.access_token, 'renewal');
   }
 
   function headerFrom(headers, name) {
@@ -129,7 +193,7 @@
   }
 
   function publicState() {
-    return { matchId: matchId(), hasToken: !!s.token, turn: s.turn, turnKey: s.turnKey };
+    return { matchId: matchId(), hasToken: !!freshToken(), turn: s.turn, turnKey: s.turnKey };
   }
 
   function tryJson(text) {
@@ -148,8 +212,14 @@
       rememberToken(auth, url);
     }
     const res = await nativeFetch(input, init);
-    if (url && isApi(url)) {
-      res.clone().text().then((t) => { const j = tryJson(t); if (j) onPayload(j, 'fetch'); }).catch(() => {});
+    if (url && isAutodartsHost(url)) {
+      const api = isApi(url);
+      res.clone().text().then((t) => {
+        const j = tryJson(t);
+        if (!j) return;
+        inspectAuthResponse(j);
+        if (api) onPayload(j, 'fetch');
+      }).catch(() => {});
     }
     return res;
   };
@@ -160,12 +230,15 @@
   const xhrSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   XMLHttpRequest.prototype.open = function (method, url) {
     this.__advUrl = String(url);
-    if (isApi(this.__advUrl)) {
+    if (isAutodartsHost(this.__advUrl)) {
+      const api = isApi(this.__advUrl);
       this.addEventListener('load', () => {
         try {
           const j = this.responseType === 'json' ? this.response
             : (this.responseType === '' || this.responseType === 'text') ? tryJson(this.responseText) : null;
-          if (j) onPayload(j, 'xhr');
+          if (!j) return;
+          inspectAuthResponse(j);
+          if (api) onPayload(j, 'xhr');
         } catch { /* ignore */ }
       });
     }
@@ -209,8 +282,12 @@
   async function sendCorrection({ dartIndex, change }) {
     const id = matchId();
     if (!id) return { ok: false, error: 'not on a match page' };
-    if (!s.token) return { ok: false, error: 'no login token seen yet - wait a few seconds' };
-    if (s.tokenExp && s.tokenExp < Date.now() / 1000) return { ok: false, error: 'login token expired - wait for the page to refresh it' };
+    const token = freshToken();
+    if (!token) {
+      return s.token
+        ? { ok: false, code: 'token-expired', error: 'login expired' }
+        : { ok: false, code: 'no-token', error: 'no login seen yet' };
+    }
 
     const body = { activated: dartIndex, changes: { [dartIndex]: change } };
     try {
@@ -219,16 +296,39 @@
         headers: {
           accept: 'application/json, text/plain, */*',
           'content-type': 'application/json',
-          authorization: s.token,
+          authorization: token,
         },
         body: JSON.stringify(body),
         credentials: 'include',
       });
       const text = await res.text();
+      if (res.status === 401) {
+        s.tokenExp = 0; // the server no longer accepts it
+        return { ok: false, status: 401, code: 'token-expired', error: 'login expired' };
+      }
       return { ok: res.ok, status: res.status, error: res.ok ? null : text.slice(0, 200) };
     } catch (e) {
       return { ok: false, error: String(e) };
     }
+  }
+
+  // ---- Reload without "Reload site?" prompt --------------------------------
+  //
+  // Autodarts registers a beforeunload handler, so a reload shows Chrome's own
+  // "Reload site? / Seite neu laden?" dialog. That dialog is part of the browser
+  // and can't be clicked by an extension (in any language). Instead we stop the
+  // page's handlers from running, but only for a reload we start ourselves.
+  // Registered at document_start, before any page script, and in the capture
+  // phase, so this listener always runs first.
+  let ownReload = false;
+  window.addEventListener('beforeunload', (e) => {
+    if (ownReload) e.stopImmediatePropagation();
+  }, true);
+
+  function reloadWithoutPrompt() {
+    ownReload = true;
+    window.onbeforeunload = null;
+    location.reload();
   }
 
   // ---- Bridge to the content script ---------------------------------------
@@ -242,6 +342,7 @@
     const { id, type, payload } = e.data;
     if (type === 'get-state') post({ type: 'reply', id, result: publicState() });
     if (type === 'correct') post({ type: 'reply', id, result: await sendCorrection(payload) });
+    if (type === 'reload') reloadWithoutPrompt();
   });
 
   // The app is a single-page app: tell the content script when the match changes.

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Voice Corrector for Autodarts",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "description": "Correct misdetected darts on Autodarts with voice commands. Not affiliated with Autodarts.",
   "permissions": ["storage"],
   "icons": {

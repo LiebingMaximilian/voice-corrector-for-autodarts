@@ -31,8 +31,16 @@
     <input id="wakeWord" type="text" autocomplete="off" spellcheck="false">
     <p class="hint">Pick a word the caller and TV rarely say.</p>
 
+    <label for="nextLabels">Next button label</label>
+    <input id="nextLabels" type="text" autocomplete="off" spellcheck="false">
+    <p class="hint">The button "<span class="w">correct</span> next" presses, exactly as it reads in Autodarts.
+      Several labels separated by commas, e.g. <code>Next, Weiter</code>.</p>
+
     <label class="check"><input id="autoConfirm" type="checkbox"> Press OK automatically</label>
     <p class="hint">Confirms a correction in Autodarts right after it's made.</p>
+
+    <label class="check"><input id="autoReload" type="checkbox"> Reload the page if the login expired</label>
+    <p class="hint">Only when a correction fails because of it. Your command is repeated after the reload.</p>
 
     <div class="buttons">
       <button type="submit">Save</button>
@@ -50,6 +58,9 @@
     <li><code><span class="w">correct</span> the first dart to 5</code>: dart 1 becomes S5</li>
     <li><code><span class="w">correct</span> bullseye</code> / <code>outer bull</code> / <code>miss</code></li>
     <li><code><span class="w">correct</span> undo</code>: reverts the last voice correction</li>
+    <li><code><span class="w">correct</span> next</code>: presses the Next / Weiter button, e.g. when pulling out the darts wasn't detected</li>
+    <li><code><span class="w">correct</span> board calibrate</code> / <code>board reset</code>: presses Calibrate / Reset in Board control</li>
+    <li>Move the panel by dragging its title; double-click the title to put it back in the corner.</li>
     <li>Short forms work too: <code>T20</code>, <code>D16</code>, <code>treble 19</code>.</li>
     <li>If something isn't understood, the panel shows what was heard. Add misheard words to the settings file.</li>
   </ul>
